@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// ===== Yapılandırma: sadece bu bloğu doldurun =====
+const SUPABASE_URL = "https://bjpbuaqvbcvpqlrjlqgu.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_5iS0PNjrPb4iF0OdBWruzg_n9nKPbsJ";
+const OYUN_URL = "https://msku-acm-oyun.netlify.app";            // Netlify'a yükledikten sonra doldurulacak
+const LINKTREE_URL = "linktr.ee/acmmsku";        // ör. "https://linktr.ee/..."
+const INSTAGRAM_HESABI = "mskuacm";    // "@" olmadan; reklam bandındaki takip kuralı
+const ODUL_METNI = "En yüksek skoru yapan, Ökkeş Kebap'tan Adana ya da tavuk dürüm kazanıyor! 🌯 Ödül için Instagram'da @mskuacm'yi takip ediyor olman gerekiyor. Kazananı Instagram'da etiketleyerek duyuracağız.";
+const KVKK_EPOSTA = "alikorayurun@posta.mu.edu.tr";
+</script>
+<title>Debug Ördeği · Skor Tablosu</title>
+<style>
+  :root {
+    --bg: #060d1a;
+    --panel: #0c1a30;
+    --cizgi: #1d3a66;
+    --acm: #1a73e8;
+    --acm-acik: #56b0ff;
+    --yazi: #e8f1ff;
+    --soluk: #8fa6c4;
+    --hata: #ff7b7b;
+    --ok: #4ade80;
+    --altin: #ffd166;
+    --gumus: #d6e2f0;
+    --bronz: #f0a868;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    color: var(--yazi);
+    background: radial-gradient(ellipse at 70% 0%, #123a72 0%, rgba(18, 58, 114, 0) 55%),
+                linear-gradient(180deg, #040915 0%, #0a1d3d 70%, #103066 100%);
+    background-color: var(--bg);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid;
+    grid-template-rows: 12vh 1fr 9vh;
+    gap: 2vh;
+    padding: 2.5vh 2.5vw 0;
+  }
+  body.bos-imlec { cursor: none; }
+  .gizli { display: none !important; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  /* Arka plandaki silik { } süsleri */
+  .sus { position: fixed; z-index: -1; font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 800; color: rgba(86, 176, 255, .06); line-height: 1; pointer-events: none; }
+
+  /* Başlık */
+  header { display: flex; align-items: center; gap: 1.5vw; }
+  header #logo { height: 11vh; width: 11vh; }
+  header .bosluk { flex: 1; }
+  header .logo-zemin { height: 9vh; padding: 1vh 1.2vw; }   /* kutu yok; padding boşluğu korur */
+  header .logo-renkli { display: block; height: 100%; width: auto; filter: brightness(0) invert(1); opacity: .95; }
+  header h1 { margin: 0; font-size: 6vh; line-height: 1; }
+  header .alt { color: var(--soluk); font-size: 2.8vh; margin-top: .6vh; }
+  .canli { display: inline-flex; align-items: center; gap: .6vw; font-weight: 700; color: var(--ok); }
+  .canli::before { content: ""; width: 1.4vh; height: 1.4vh; border-radius: 50%; background: currentColor; animation: nabiz 1.6s infinite; }
+  @keyframes nabiz { 50% { opacity: .25; } }
+
+  .kontroller { display: flex; gap: .8vw; align-items: center; }
+  body.bos-imlec .kontroller button { opacity: 0; }
+  .kontroller button {
+    font: inherit; font-size: 2.2vh; font-weight: 700; color: #fff; cursor: pointer;
+    background: var(--acm); border: 0; border-radius: 1.2vh; padding: 1.2vh 1.4vw; transition: opacity .4s;
+  }
+  .kontroller button.ikincil { background: transparent; border: 2px solid var(--acm-acik); color: var(--acm-acik); }
+
+  /* Bağlantı uyarısı */
+  /* Yeni lider kutlaması: 3 sn tam ekran */
+  #kutlama { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; background: rgba(4, 9, 21, .88); text-align: center; animation: kutlamaGir .4s ease-out; }
+  #kutlama.cikis { animation: kutlamaCik .4s ease-in forwards; }
+  #kutlama .tac { font-size: 14vh; line-height: 1; animation: zipla 1s ease-in-out infinite; }
+  #kutlama .baslik { font-size: 9vh; font-weight: 900; letter-spacing: .04em; color: var(--altin); text-shadow: 0 0 4vh rgba(255, 209, 102, .6); }
+  #kutlama .lider { font-size: 10vh; font-weight: 800; color: #fff; max-width: 90vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #kutlama .skor { font-size: 7vh; font-weight: 700; color: var(--acm-acik); }
+  #konfeti { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  @keyframes kutlamaGir { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: scale(1); } }
+  @keyframes kutlamaCik { to { opacity: 0; } }
+  @keyframes zipla { 50% { transform: translateY(-2vh) rotate(-6deg); } }
+
+  #baglanti {
+    position: fixed; top: 1.5vh; right: 1.5vw; z-index: 10;
+    background: #3a1414; color: var(--hata); border: 2px solid var(--hata);
+    font-weight: 800; font-size: 2.4vh; padding: 1vh 1.2vw; border-radius: 1.2vh;
+    animation: nabiz 1.6s infinite;
+  }
+
+  main { display: grid; grid-template-columns: 1.55fr 1fr; gap: 2.5vw; min-height: 0; }
+
+  /* Sol: ilk 10 */
+  .tablo { display: flex; flex-direction: column; min-height: 0; }
+  .tablo h2 { margin: 0 0 1.2vh; font-size: 3.4vh; color: var(--soluk); font-weight: 700; }
+  #liste { list-style: none; margin: 0; padding: 0; flex: 1; display: grid; grid-template-rows: repeat(10, 1fr); gap: .8vh; min-height: 0; }
+  #liste li {
+    display: flex; align-items: center; gap: 1.6vw;
+    padding: 0 1.6vw; border-radius: 1.6vh;
+    background: rgba(12, 26, 48, .85); border: 1px solid var(--cizgi);
+    font-size: 4.2vh; min-height: 0;
+    transition: transform .7s cubic-bezier(.2, .8, .2, 1);
+  }
+  #liste .sira { width: 3.2em; flex: none; font-weight: 800; color: var(--soluk); font-variant-numeric: tabular-nums; }
+  #liste .ad { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #liste .puan { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--acm-acik); }
+  #liste li:nth-child(1) { border-color: var(--altin); }
+  #liste li:nth-child(1) .sira, #liste li:nth-child(1) .puan { color: var(--altin); }
+  #liste li:nth-child(2) .sira { color: var(--gumus); }
+  #liste li:nth-child(3) .sira { color: var(--bronz); }
+  #liste li.parla { animation: parla 2.6s ease-out; }
+  @keyframes parla {
+    0%   { background: #2f8cff; box-shadow: 0 0 0 .4vh #9fd3ff, 0 0 5vh #2f8cff; transform: scale(1.03); }
+    60%  { background: rgba(26, 115, 232, .55); box-shadow: 0 0 3vh rgba(47, 140, 255, .6); transform: scale(1); }
+    100% { background: rgba(12, 26, 48, .85); box-shadow: none; }
+  }
+  #bosListe { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 4.5vh; color: var(--soluk); text-align: center; }
+
+  /* Sağ: QR */
+  .qr-kart {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.6vh;
+    background: var(--panel); border: 2px solid var(--cizgi); border-radius: 2.4vh; padding: 2.4vh 2vw; min-height: 0;
+  }
+  .qr-kart h2 { margin: 0; font-size: 4.6vh; line-height: 1.15; text-align: center; }
+  #qrKutu { flex: 1; width: 100%; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #qr { background: #fff; border-radius: 1.6vh; box-shadow: 0 0 0 .6vh var(--acm), 0 1.5vh 5vh rgba(0, 0, 0, .5); }
+  #qrYedek { font-size: 3vh; color: var(--soluk); text-align: center; }
+  #oyunAdres { font-size: 2.6vh; color: var(--acm-acik); font-weight: 700; text-align: center; word-break: break-all; }
+  #odul { font-size: 2.6vh; color: var(--altin); font-weight: 700; margin-top: 1vh; text-align: center; }
+
+  /* Alt: dönen ACM bandı */
+  footer {
+    margin: 0 -2.5vw; overflow: hidden; display: flex; align-items: center;
+    background: var(--acm); border-top: .5vh solid var(--acm-acik);
+  }
+  #bant { display: flex; white-space: nowrap; will-change: transform; animation: kay 40s linear infinite; }
+  #bant span { font-size: 3.8vh; font-weight: 800; padding: 0 2.5vw; }
+  #bant span.ayrac { color: #9fd3ff; padding: 0; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  @keyframes kay { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+</style>
+</head>
+<body>
+
+<div class="sus" style="font-size:60vh;left:-4vw;top:10vh">{</div>
+<div class="sus" style="font-size:60vh;right:-4vw;top:20vh">}</div>
+
+<div id="baglanti" class="gizli">⚠ Bağlantı bekleniyor</div>
+<div id="kutlama" class="gizli" aria-live="polite">
+  <canvas id="konfeti"></canvas>
+  <div class="tac">👑</div>
+  <div class="baslik">YENİ LİDER</div>
+  <div class="lider" id="kutlamaAd"></div>
+  <div class="skor" id="kutlamaSkor"></div>
+</div>
+
+<header>
+  <canvas id="logo" width="220" height="220"></canvas>
+  <div>
+    <h1>Debug Ördeği</h1>
+    <div class="alt">MSKÜ ACM · Community Day · <span class="canli">Canlı skor tablosu</span></div>
+  </div>
+  <div class="bosluk"></div>
+  <div class="logo-zemin gizli"><canvas class="logo-renkli" aria-label="MSKÜ ACM Student Chapter logosu"></canvas></div>
+  <div class="kontroller">
+    <button id="sesBtn" type="button">🔊 Sesi aç</button>
+    <button id="tamEkranBtn" type="button" class="ikincil">Tam ekran</button>
+  </div>
+</header>
+
+<main>
+  <section class="tablo">
+    <h2>İlk 10</h2>
+    <ol id="liste"></ol>
+    <div id="bosListe" class="gizli">Henüz skor yok. İlk sen ol!</div>
+  </section>
+
+  <section class="qr-kart">
+    <h2>Telefonunla okut, oyna, kazan!</h2>
+    <div id="qrKutu">
+      <canvas id="qr"></canvas>
+      <div id="qrYedek" class="gizli"></div>
+    </div>
+    <div id="oyunAdres"></div>
+    <div id="odul" class="gizli"></div>
+  </section>
+</main>
+
+<footer><div id="bant"></div></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+"use strict";
+
+const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js";
+const YENILEME_ARALIGI = 4000;  // ms; leaderboard RPC'si bu sıklıkla çağrılır
+const RPC_ZAMAN_ASIMI = 8000;   // ms
+
+const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------------
+// Supabase: index.html ile aynı yöntem (sadece .rpc(), tabloya erişim yok)
+// ---------------------------------------------------------------------
+let sbIstemci = null;
+let sbYukleniyor = null;
+
+function istemciAl() {
+  if (sbIstemci) return Promise.resolve(sbIstemci);
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return Promise.reject(new Error("ayar_eksik"));
+  if (!sbYukleniyor) {
+    sbYukleniyor = new Promise((tamam, hata) => {
+      const s = document.createElement("script");
+      s.src = SUPABASE_JS;
+      s.async = true;
+      s.onload = () => {
+        try {
+          sbIstemci = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+          });
+          tamam(sbIstemci);
+        } catch (e) { hata(e); }
+      };
+      s.onerror = () => { s.remove(); hata(new Error("kutuphane_yuklenemedi")); };
+      document.head.appendChild(s);
+    }).catch((e) => { sbYukleniyor = null; throw e; });
+  }
+  return sbYukleniyor;
+}
+
+function zamanAsimi(ms) {
+  return new Promise((_, hata) => setTimeout(() => hata(new Error("zaman_asimi")), ms));
+}
+
+// Standda sorun ayıklamak için hata konsola yazılır: sadece fonksiyon adı,
+// hata kodu ve mesajı. Parametreler (Instagram kullanıcı adı) ve satır verisi
+// içerebilen "details" alanı asla yazılmaz.
+function hataYazdir(ad, e) {
+  const kod = (e && (e.code || e.name)) || "-";
+  const mesaj = String((e && e.message) || e);
+  console.error(`[Supabase] ${ad} başarısız · kod: ${kod} · mesaj: ${mesaj}`);
+}
+
+async function rpc(ad, parametreler) {
+  const istek = istemciAl().then((sb) => sb.rpc(ad, parametreler)).then(({ data, error }) => {
+    if (error) throw error;
+    return data;
+  });
+  try {
+    return await Promise.race([istek, zamanAsimi(RPC_ZAMAN_ASIMI)]);
+  } catch (e) {
+    hataYazdir(ad, e);
+    throw e;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Ses (WebAudio; "Sesi aç" butonuyla başlar)
+// ---------------------------------------------------------------------
+let ses = null;
+let sesAcik = false;
+
+function ton(frekans, sure, tip, guc, gecikme) {
+  if (!ses || !sesAcik) return;
+  const t = ses.currentTime + (gecikme || 0);
+  const o = ses.createOscillator();
+  const g = ses.createGain();
+  o.type = tip;
+  o.frequency.setValueAtTime(frekans, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(guc, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + sure);
+  o.connect(g).connect(ses.destination);
+  o.start(t);
+  o.stop(t + sure + 0.02);
+}
+const sesler = {
+  degisim: () => { ton(660, 0.18, "triangle", 0.25); ton(990, 0.25, "triangle", 0.25, 0.12); },
+  yeniLider: () => { ton(523, 0.2, "square", 0.12); ton(659, 0.2, "square", 0.12, 0.15); ton(784, 0.2, "square", 0.12, 0.3); ton(1047, 0.45, "square", 0.12, 0.45); },
+};
+
+$("sesBtn").addEventListener("click", () => {
+  if (!ses) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) ses = new AC();
+  }
+  if (ses && ses.state === "suspended") ses.resume();
+  sesAcik = !sesAcik;
+  $("sesBtn").textContent = sesAcik ? "🔇 Sesi kapat" : "🔊 Sesi aç";
+  if (sesAcik) sesler.degisim();
+});
+
+$("tamEkranBtn").addEventListener("click", () => {
+  const el = document.documentElement;
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+});
+
+// Fare bir süre hareket etmezse imleci ve butonları gizle
+let imlecZamanlayici = 0;
+function imlecHareket() {
+  document.body.classList.remove("bos-imlec");
+  clearTimeout(imlecZamanlayici);
+  imlecZamanlayici = setTimeout(() => document.body.classList.add("bos-imlec"), 3000);
+}
+window.addEventListener("mousemove", imlecHareket);
+imlecHareket();
+
+// ---------------------------------------------------------------------
+// İlk 10 listesi: sıra değişince satır kayar, parlar ve ses çalar
+// ---------------------------------------------------------------------
+let oncekiListe = null;          // null: henüz hiç veri gelmedi (ilk yüklemede parlama yok)
+const satirlar = new Map();      // anahtar → <li>
+
+// leaderboard "@kullaniciadi" ve skor döndürür. Kullanıcı adı benzersizdir;
+// yine de aynı ad iki kez gelirse karışmasın diye anahtar "ad#kaçıncı tekrar".
+function anahtarla(liste) {
+  const sayac = new Map();
+  return liste.map((satir) => {
+    const n = (sayac.get(satir.name) || 0) + 1;
+    sayac.set(satir.name, n);
+    return { anahtar: `${satir.name}#${n}`, name: satir.name, best: satir.best };
+  });
+}
+
+function satirOlustur() {
+  const li = document.createElement("li");
+  for (const sinif of ["sira", "ad", "puan"]) {
+    const span = document.createElement("span");
+    span.className = sinif;
+    li.appendChild(span);
+  }
+  return li;
+}
+
+function listeGuncelle(hamListe) {
+  const yeni = anahtarla(hamListe);
+  const ol = $("liste");
+
+  // Değişen satırları bul: yeni giren, yükselen veya skoru artan
+  const eskiSira = new Map();
+  const eskiSkor = new Map();
+  if (oncekiListe) oncekiListe.forEach((s, i) => { eskiSira.set(s.anahtar, i); eskiSkor.set(s.anahtar, s.best); });
+  const parlayanlar = new Set();
+  if (oncekiListe) {
+    yeni.forEach((s, i) => {
+      const eski = eskiSira.get(s.anahtar);
+      if (eski === undefined || i < eski || s.best !== eskiSkor.get(s.anahtar)) parlayanlar.add(s.anahtar);
+    });
+  }
+  const yeniLider = oncekiListe && yeni.length > 0 &&
+    (oncekiListe.length === 0 || oncekiListe[0].anahtar !== yeni[0].anahtar);
+
+  // FLIP: eski konumları ölç
+  const ilkKonum = new Map();
+  for (const [k, li] of satirlar) ilkKonum.set(k, li.getBoundingClientRect().top);
+
+  // DOM'u yeni sıraya göre kur (metinler textContent ile)
+  const kalanlar = new Set();
+  yeni.forEach((s, i) => {
+    let li = satirlar.get(s.anahtar);
+    if (!li) { li = satirOlustur(); satirlar.set(s.anahtar, li); }
+    li.children[0].textContent = `${i + 1}.`;
+    li.children[1].textContent = s.name;
+    li.children[2].textContent = String(s.best);
+    ol.appendChild(li);
+    kalanlar.add(s.anahtar);
+  });
+  for (const [k, li] of satirlar) {
+    if (!kalanlar.has(k)) { li.remove(); satirlar.delete(k); }
+  }
+
+  // FLIP: yer değiştiren satırları eski konumdan yeni konuma kaydır
+  for (const [k, li] of satirlar) {
+    const once = ilkKonum.get(k);
+    if (once === undefined) continue;
+    const fark = once - li.getBoundingClientRect().top;
+    if (Math.abs(fark) < 1) continue;
+    li.style.transition = "none";
+    li.style.transform = `translateY(${fark}px)`;
+    li.getBoundingClientRect();   // stili uygula
+    li.style.transition = "";
+    li.style.transform = "";
+  }
+
+  for (const k of parlayanlar) {
+    const li = satirlar.get(k);
+    li.classList.remove("parla");
+    void li.offsetWidth;          // animasyonu yeniden başlat
+    li.classList.add("parla");
+  }
+
+  if (yeniLider) { sesler.yeniLider(); kutlamaGoster(yeni[0]); }
+  else if (parlayanlar.size) sesler.degisim();
+
+  $("bosListe").classList.toggle("gizli", yeni.length > 0);
+  ol.classList.toggle("gizli", yeni.length === 0);
+  oncekiListe = yeni;
+}
+
+// ---------------------------------------------------------------------
+// Yeni lider kutlaması: 3 sn tam ekran, konfeti. Sadece gerçek bir lider
+// değişiminde çağrılır (ilk yüklemede oncekiListe null olduğundan çağrılmaz).
+// ---------------------------------------------------------------------
+const KUTLAMA_SURE = 3000;
+const KONFETI_SAYISI = 140;
+let kutlamaZamanlayici = 0;
+let konfetiKare = 0;
+
+function kutlamaGoster(lider) {
+  const el = $("kutlama");
+  $("kutlamaAd").textContent = lider.name;
+  $("kutlamaSkor").textContent = `${lider.best} puan`;
+  el.classList.remove("gizli", "cikis");
+  clearTimeout(kutlamaZamanlayici);
+  konfetiBaslat();
+  kutlamaZamanlayici = setTimeout(() => {
+    el.classList.add("cikis");
+    kutlamaZamanlayici = setTimeout(() => { el.classList.add("gizli"); konfetiDurdur(); }, 400);
+  }, KUTLAMA_SURE - 400);
+}
+
+function konfetiBaslat() {
+  const c = $("konfeti");
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = c.clientWidth, H = c.clientHeight;
+  c.width = Math.round(W * dpr);
+  c.height = Math.round(H * dpr);
+  const x = c.getContext("2d");
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const renkler = ["#ffd166", "#56b0ff", "#1a73e8", "#ffffff", "#ff7aa8", "#4ade80"];
+  const parcalar = [];
+  for (let i = 0; i < KONFETI_SAYISI; i++) {
+    parcalar.push({
+      x: Math.random() * W, y: -Math.random() * H * 0.5 - 20,
+      vx: (Math.random() - 0.5) * 120, vy: 180 + Math.random() * 260,
+      w: 8 + Math.random() * 8, h: 5 + Math.random() * 5,
+      aci: Math.random() * Math.PI * 2, donus: (Math.random() - 0.5) * 10,
+      renk: renkler[i % renkler.length],
+    });
+  }
+  let onceki = performance.now();
+  const bitis = onceki + KUTLAMA_SURE;
+  const kare = (t) => {
+    const dt = Math.min((t - onceki) / 1000, 0.05);
+    onceki = t;
+    x.clearRect(0, 0, W, H);
+    for (const p of parcalar) {
+      p.vy += 160 * dt;
+      p.x += (p.vx + Math.sin(t / 300 + p.aci) * 40) * dt;
+      p.y += p.vy * dt;
+      p.aci += p.donus * dt;
+      if (p.y > H + 20) { p.y = -20; p.vy = 180 + Math.random() * 200; }
+      x.save();
+      x.translate(p.x, p.y);
+      x.rotate(p.aci);
+      x.fillStyle = p.renk;
+      x.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.aci * 1.3)) + 1);
+      x.restore();
+    }
+    if (t < bitis) konfetiKare = requestAnimationFrame(kare);
+  };
+  cancelAnimationFrame(konfetiKare);
+  konfetiKare = requestAnimationFrame(kare);
+}
+
+function konfetiDurdur() {
+  cancelAnimationFrame(konfetiKare);
+  const c = $("konfeti");
+  c.getContext("2d").clearRect(0, 0, c.width, c.height);
+}
+
+// ---------------------------------------------------------------------
+// Yenileme döngüsü: 4 sn'de bir; hata olursa son liste ekranda kalır
+// ---------------------------------------------------------------------
+async function yenile() {
+  const baslangic = Date.now();
+  try {
+    const liste = await rpc("leaderboard", { p_limit: 10 });
+    listeGuncelle(Array.isArray(liste) ? liste : []);
+    $("baglanti").classList.add("gizli");
+  } catch (e) {
+    $("baglanti").classList.remove("gizli");
+  }
+  setTimeout(yenile, Math.max(0, YENILEME_ARALIGI - (Date.now() - baslangic)));
+}
+
+// ---------------------------------------------------------------------
+// QR kod (OYUN_URL)
+// ---------------------------------------------------------------------
+function qrCiz() {
+  const tuval = $("qr");
+  const yedek = $("qrYedek");
+  $("oyunAdres").textContent = OYUN_URL.replace(/^https?:\/\//, "").replace(/\/$/, "");
+
+  if (!OYUN_URL || typeof window.qrcode !== "function") {
+    tuval.classList.add("gizli");
+    yedek.classList.remove("gizli");
+    yedek.textContent = OYUN_URL ? "QR kod yüklenemedi" : "OYUN_URL ayarlanmadı";
+    return;
+  }
+  if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs["UTF-8"]) qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+  const qr = qrcode(0, "M");
+  qr.addData(OYUN_URL);
+  qr.make();
+
+  const n = qr.getModuleCount();
+  const bosluk = 4;                        // standart sessiz bölge
+  tuval.classList.remove("gizli");
+  yedek.classList.add("gizli");
+  tuval.style.width = tuval.style.height = "0px";   // kutuyu ölçmeden önce eski boyutu sıfırla
+  const kutu = $("qrKutu").getBoundingClientRect();
+  const boyut = Math.max(100, Math.floor(Math.min(kutu.width, kutu.height)));
+  const dpr = window.devicePixelRatio || 1;
+  const modul = Math.max(1, Math.floor((boyut * dpr) / (n + bosluk * 2)));
+  const piksel = modul * (n + bosluk * 2);
+
+  tuval.width = piksel;
+  tuval.height = piksel;
+  tuval.style.width = piksel / dpr + "px";
+  tuval.style.height = piksel / dpr + "px";
+  const c = tuval.getContext("2d");
+  c.fillStyle = "#ffffff";
+  c.fillRect(0, 0, piksel, piksel);
+  c.fillStyle = "#0b1020";
+  for (let r = 0; r < n; r++) {
+    for (let k = 0; k < n; k++) {
+      if (qr.isDark(r, k)) c.fillRect((k + bosluk) * modul, (r + bosluk) * modul, modul, modul);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------
+// Dönen ACM reklam bandı (sadece doğrulanmış/ayarlanmış bilgiler)
+// ---------------------------------------------------------------------
+function bantKur() {
+  const mesajlar = [
+    "MSKÜ ACM Student Chapter",
+    "23 Ekim'de Teknopark İzmir'in davetiyle teknik gezideyiz",
+    "Debug Ördeği'ni oyna, skor tablosuna gir!",
+  ];
+  const linktree = String(LINKTREE_URL || "").trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  if (linktree) mesajlar.push(`MSKÜ ACM'ye katıl: ${linktree}`);
+  const insta = String(INSTAGRAM_HESABI || "").trim().replace(/^@/, "");
+  if (insta) mesajlar.push(`Ödül için Instagram'da @${insta}'yi takip et!`);   // Türkçe ek sabit
+  if (ODUL_METNI) mesajlar.push(`Ödül: ${ODUL_METNI}`);
+
+  // Kesintisiz döngü için içerik iki kez eklenir; animasyon %50 kayar.
+  const bant = $("bant");
+  bant.textContent = "";
+  for (let tekrar = 0; tekrar < 2; tekrar++) {
+    for (const m of mesajlar) {
+      const span = document.createElement("span");
+      span.textContent = m;
+      const ayrac = document.createElement("span");
+      ayrac.className = "ayrac";
+      ayrac.textContent = "{ }";
+      bant.append(span, ayrac);
+    }
+  }
+  // Uzunluktan bağımsız sabit okuma hızı
+  requestAnimationFrame(() => {
+    const yarim = bant.scrollWidth / 2;
+    const hiz = window.innerWidth / 9;    // px/sn: ekran genişliğini ~9 sn'de geçer
+    bant.style.animationDuration = `${Math.max(20, yarim / hiz)}s`;
+  });
+}
+
+// index.html ile aynı ana karakter (jetpack'li lastik ördek)
+// ---------------------------------------------------------------------
+function yuvarlakDikdortgen(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+// Jet alevi. yon: yerel açı (0 = düz aşağı, pozitif = geriye doğru), guc 0-1
+function alevCiz(c, x, y, r, guc, zaman, yon) {
+  const boy = r * (0.5 + 0.9 * guc) * (0.85 + 0.15 * Math.sin(zaman * 70));
+  c.save();
+  c.translate(x, y);
+  c.rotate(yon);
+  c.globalAlpha = Math.min(1, 0.35 + guc);
+  c.fillStyle = "#ff7a1a";
+  c.beginPath(); c.moveTo(-r * 0.17, 0); c.quadraticCurveTo(0, boy * 1.35, r * 0.17, 0); c.closePath(); c.fill();
+  c.fillStyle = "#ffe066";
+  c.beginPath(); c.moveTo(-r * 0.09, 0); c.quadraticCurveTo(0, boy * 0.8, r * 0.09, 0); c.closePath(); c.fill();
+  c.restore();
+}
+
+function gozCiz(c, gx, gy, gr, d, gozbebekRenk) {
+  if (d.olu) {
+    c.strokeStyle = "#1b1b1b";
+    c.lineWidth = gr * 0.45;
+    const k = gr * 0.75;
+    c.beginPath(); c.moveTo(gx - k, gy - k); c.lineTo(gx + k, gy + k); c.moveTo(gx + k, gy - k); c.lineTo(gx - k, gy + k); c.stroke();
+  } else if (d.kirp) {
+    c.strokeStyle = "#1b1b1b";
+    c.lineWidth = gr * 0.35;
+    c.beginPath(); c.arc(gx, gy - gr * 0.2, gr * 0.85, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke();
+  } else {
+    c.fillStyle = "#fff";
+    c.beginPath(); c.arc(gx, gy, gr, 0, Math.PI * 2); c.fill();
+    c.fillStyle = gozbebekRenk;
+    c.beginPath(); c.arc(gx + gr * 0.3, gy + gr * 0.05, gr * 0.52, 0, Math.PI * 2); c.fill();
+    c.fillStyle = "#fff";
+    c.beginPath(); c.arc(gx + gr * 0.45, gy - gr * 0.2, gr * 0.18, 0, Math.PI * 2); c.fill();
+  }
+}
+
+// Jetpack'li sarı lastik ördek (rubber duck debugging), kafasında pilot gözlüğü
+function ordekCiz(c, x, y, r, aci, d) {
+  c.save();
+  c.translate(x, y);
+  c.rotate(aci);
+  c.scale(d.sx || 1, d.sy || 1);
+  c.lineCap = "round";
+  c.lineJoin = "round";
+
+  // Alev (jetpack nozulundan aşağı-geriye)
+  if (d.alev > 0.02) alevCiz(c, -r * 1.02, r * 0.66, r, d.alev, d.zaman, 0.35);
+
+  // Jetpack (gövdenin arkasında)
+  c.fillStyle = "#8a9bb8";
+  c.strokeStyle = "#3d4f6e";
+  c.lineWidth = r * 0.08;
+  yuvarlakDikdortgen(c, -r * 1.32, -r * 0.42, r * 0.6, r * 0.95, r * 0.18);
+  c.fill(); c.stroke();
+  c.fillStyle = "#1a73e8";
+  c.fillRect(-r * 1.27, -r * 0.12, r * 0.5, r * 0.15);
+  c.fillStyle = "#3d4f6e";
+  c.beginPath(); c.moveTo(-r * 1.2, r * 0.5); c.lineTo(-r * 0.84, r * 0.5); c.lineTo(-r * 0.9, r * 0.68); c.lineTo(-r * 1.14, r * 0.68); c.closePath(); c.fill();
+
+  // Gövde ve kuyruk
+  c.fillStyle = "#ffd43b";
+  c.strokeStyle = "#d99a00";
+  c.lineWidth = r * 0.08;
+  c.beginPath();
+  c.moveTo(-r * 0.7, -r * 0.2);
+  c.quadraticCurveTo(-r * 1.05, -r * 0.55, -r * 0.98, -r * 0.82);   // yukarı kalkık kuyruk
+  c.quadraticCurveTo(-r * 0.55, -r * 0.62, -r * 0.2, -r * 0.42);
+  c.lineTo(r * 0.3, -r * 0.3);
+  c.quadraticCurveTo(r * 1.15, -r * 0.2, r * 1.0, r * 0.3);
+  c.quadraticCurveTo(r * 0.8, r * 0.85, 0, r * 0.82);
+  c.quadraticCurveTo(-r * 0.95, r * 0.8, -r * 1.0, r * 0.15);
+  c.quadraticCurveTo(-r * 0.98, -r * 0.05, -r * 0.7, -r * 0.2);
+  c.closePath();
+  c.fill(); c.stroke();
+
+  // Jetpack kayışı
+  c.strokeStyle = "#3d4f6e";
+  c.lineWidth = r * 0.12;
+  c.beginPath(); c.moveTo(-r * 0.75, -r * 0.3); c.quadraticCurveTo(-r * 0.1, r * 0.05, r * 0.2, r * 0.78); c.stroke();
+
+  // Kanat
+  const kanat = Math.sin(d.kanat || 0) * 0.25;
+  c.fillStyle = "#ffc21a";
+  c.strokeStyle = "#d99a00";
+  c.lineWidth = r * 0.07;
+  c.save();
+  c.translate(-r * 0.15, r * 0.18);
+  c.rotate(-0.25 + kanat);
+  c.beginPath(); c.ellipse(0, 0, r * 0.48, r * 0.27, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+  c.restore();
+
+  // Kafa
+  const kx = r * 0.6, ky = -r * 0.68, kr = r * 0.52;
+  c.fillStyle = "#ffd43b";
+  c.strokeStyle = "#d99a00";
+  c.lineWidth = r * 0.08;
+  c.beginPath(); c.arc(kx, ky, kr, 0, Math.PI * 2); c.fill(); c.stroke();
+
+  // Gaga
+  c.fillStyle = "#ff8c1a";
+  c.strokeStyle = "#d9660b";
+  c.lineWidth = r * 0.06;
+  c.beginPath();
+  c.moveTo(r * 1.0, -r * 0.78);
+  c.quadraticCurveTo(r * 1.55, -r * 0.74, r * 1.48, -r * 0.56);
+  c.quadraticCurveTo(r * 1.3, -r * 0.42, r * 1.0, -r * 0.48);
+  c.closePath(); c.fill(); c.stroke();
+
+  // Yanak ve göz
+  c.fillStyle = "rgba(255, 120, 120, 0.45)";
+  c.beginPath(); c.ellipse(r * 0.82, -r * 0.45, r * 0.12, r * 0.08, 0, 0, Math.PI * 2); c.fill();
+  gozCiz(c, r * 0.8, -r * 0.74, r * 0.17, d, "#1b1b1b");
+
+  // Pilot gözlüğü (alnına itilmiş): kayış + iki cam
+  c.strokeStyle = "#6b4226";
+  c.lineWidth = r * 0.11;
+  c.beginPath(); c.arc(kx, ky, kr * 0.98, Math.PI * 1.08, Math.PI * 1.62); c.stroke();
+  for (const [gx, gy] of [[r * 0.4, -r * 1.12], [r * 0.78, -r * 1.12]]) {
+    c.fillStyle = "#8d6e63";
+    c.beginPath(); c.arc(gx, gy, r * 0.17, 0, Math.PI * 2); c.fill();
+    c.fillStyle = "#7dd3fc";
+    c.beginPath(); c.arc(gx, gy, r * 0.11, 0, Math.PI * 2); c.fill();
+    c.fillStyle = "rgba(255, 255, 255, 0.8)";
+    c.beginPath(); c.arc(gx - r * 0.04, gy - r * 0.04, r * 0.035, 0, Math.PI * 2); c.fill();
+  }
+  c.strokeStyle = "#8d6e63";
+  c.lineWidth = r * 0.06;
+  c.beginPath(); c.moveTo(r * 0.57, -r * 1.12); c.lineTo(r * 0.61, -r * 1.12); c.stroke();
+
+  c.restore();
+}
+
+// ---------------------------------------------------------------------
+// MSKÜ ACM logosu (logo.svg): sayfa açılırken bir kez yüklenir, kenarlardaki
+// şeffaf boşluk kırpılıp bir kaynak tuvale çizilir. Sonraki tüm çizimler bu
+// tuvalden yapılır; SVG bir daha çizilmez. Dosya yoksa sessizce atlanır.
+// ---------------------------------------------------------------------
+const LOGO_DOSYASI = "logo.svg";
+const LOGO_KAYNAK_G = 1200;   // kırpılmış kaynak tuvalin genişliği (px)
+// Şeffaf kenarlar ölçülemezse (tarayıcı SVG çizilmiş tuvalden piksel okumaya
+// izin vermezse) kullanılacak kırpma: Canva çıktısında logo, karenin ortasındaki yatay bant.
+const LOGO_VARSAYILAN_KIRP = { x: 0, y: 0.29, w: 1, h: 0.42 };
+
+function logoYukle() {
+  return new Promise((tamam) => {
+    const img = new Image();
+    img.onload = () => {
+      try { tamam(logoKaynakHazirla(img)); } catch (e) { tamam(null); }
+    };
+    img.onerror = () => tamam(null);
+    img.src = LOGO_DOSYASI;
+  });
+}
+
+function logoKirpmaBul(img) {
+  try {
+    const n = 256;
+    const c = document.createElement("canvas");
+    c.width = n; c.height = n;
+    const x = c.getContext("2d");
+    x.drawImage(img, 0, 0, n, n);
+    const d = x.getImageData(0, 0, n, n).data;
+    let x0 = n, y0 = n, x1 = -1, y1 = -1;
+    for (let y = 0; y < n; y++) {
+      for (let i = 0; i < n; i++) {
+        if (d[(y * n + i) * 4 + 3] > 8) {
+          if (i < x0) x0 = i;
+          if (i > x1) x1 = i;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    if (x1 < 0) return LOGO_VARSAYILAN_KIRP;
+    x0 = Math.max(0, x0 - 2); y0 = Math.max(0, y0 - 2);
+    x1 = Math.min(n - 1, x1 + 2); y1 = Math.min(n - 1, y1 + 2);
+    return { x: x0 / n, y: y0 / n, w: (x1 - x0 + 1) / n, h: (y1 - y0 + 1) / n };
+  } catch (e) {
+    return LOGO_VARSAYILAN_KIRP;
+  }
+}
+
+function logoKaynakHazirla(img) {
+  const iw = img.naturalWidth || 2000, ih = img.naturalHeight || 2000;
+  const k = logoKirpmaBul(img);
+  const c = document.createElement("canvas");
+  c.width = LOGO_KAYNAK_G;
+  c.height = Math.max(1, Math.round(LOGO_KAYNAK_G * (k.h * ih) / (k.w * iw)));
+  c.getContext("2d").drawImage(img, k.x * iw, k.y * ih, k.w * iw, k.h * ih, 0, 0, c.width, c.height);
+  return c;
+}
+
+// Ekranlardaki logolar (.logo-renkli tuvalleri): kaynak orijinal renklerle çizilir,
+// CSS filtresi (brightness(0) invert(1)) tek renk beyaza çevirir; beyaz kutu yok.
+// Zeplindeki kopya bundan bağımsızdır, orijinal renkleriyle kalır.
+// Logo yüklenemezse .logo-zemin "gizli" kalır ve yer kaplamaz.
+function renkliLogolariCiz(kaynak) {
+  for (const c of document.querySelectorAll(".logo-renkli")) {
+    c.width = kaynak.width / 2;
+    c.height = Math.round(kaynak.height / 2);
+    c.getContext("2d").drawImage(kaynak, 0, 0, c.width, c.height);
+    c.parentElement.classList.remove("gizli");
+  }
+}
+
+function logoCiz() {
+  const c = $("logo");
+  const x = c.getContext("2d");
+  x.clearRect(0, 0, c.width, c.height);
+  ordekCiz(x, c.width * 0.5, c.height * 0.6, c.width * 0.26, -0.1, { zaman: 0, kanat: 1.2, kirp: false, olu: false, alev: 0.3, sx: 1, sy: 1 });
+}
+
+// ---------------------------------------------------------------------
+// Başlat
+// ---------------------------------------------------------------------
+if (ODUL_METNI) {
+  $("odul").textContent = `Ödül: ${ODUL_METNI}`;
+  $("odul").classList.remove("gizli");
+}
+logoCiz();
+bantKur();
+qrCiz();
+let boyutZamanlayici = 0;
+window.addEventListener("resize", () => {
+  clearTimeout(boyutZamanlayici);
+  boyutZamanlayici = setTimeout(() => { qrCiz(); bantKur(); }, 200);
+});
+yenile();
+logoYukle().then((kaynak) => { if (kaynak) renkliLogolariCiz(kaynak); });
+</script>
+</body>
+</html>
